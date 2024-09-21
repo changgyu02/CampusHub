@@ -1,0 +1,245 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>글 작성하기 - CampusHub</title>
+    <link href="./bootstrap.min.css" rel="stylesheet">
+
+    <!-- Firebase compat SDKs -->
+    <script src="https://www.gstatic.com/firebasejs/9.0.0/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.0.0/firebase-auth-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.0.0/firebase-firestore-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.0.0/firebase-storage-compat.js"></script>
+    <style>
+        .upload-form {
+            margin-top: 30px;
+        }
+    </style>
+</head>
+<body>
+    <!-- 네비게이션 바 -->
+    <nav class="navbar navbar-expand-lg navbar-light bg-light">
+        <div class="container-fluid">
+            <a class="navbar-brand" href="ch_main.html">CampusHub <span id="user-nickname"></span></a>
+            <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbarNav" aria-controls="navbarNav" aria-expanded="false" aria-label="Toggle navigation">
+                <span class="navbar-toggler-icon"></span>
+            </button>
+            <div class="collapse navbar-collapse" id="navbarNav">
+                <ul class="navbar-nav ms-auto">
+                    <li class="nav-item">
+                        <a class="nav-link" href="my_information.html">내정보</a>
+                    </li>
+                    <li class="nav-item">
+                        <a class="nav-link" href="all_alarm.html">알림</a>
+                    </li>
+                    <li class="nav-item">
+                        <a class="nav-link" href="#" onclick="logout()">로그아웃</a>
+                    </li>
+                </ul>
+            </div>
+        </div>
+    </nav>
+
+    <div class="container upload-form">
+        <h2>글 작성하기</h2>
+        <form id="upload-form">
+            <!-- 카테고리 선택 -->
+            <div class="mb-3">
+                <label for="category" class="form-label">카테고리</label>
+                <select class="form-select" id="category" required>
+                    <option value="">카테고리를 선택하세요</option>
+                    <option value="예제">예제</option>
+                    <option value="기출">기출</option>
+                    <option value="필기">필기</option>
+                </select>
+            </div>
+
+            <!-- 글 제목 입력 -->
+            <div class="mb-3">
+                <label for="title" class="form-label">글 제목</label>
+                <input type="text" class="form-control" id="title" placeholder="제목을 입력하세요" required>
+            </div>
+
+            <!-- 글 내용 입력 -->
+            <div class="mb-3">
+                <label for="content" class="form-label">글 내용</label>
+                <textarea class="form-control" id="content" rows="10" placeholder="내용을 입력하세요" required></textarea>
+            </div>
+
+            <!-- 첨부 파일 -->
+            <div class="mb-3">
+                <label for="file" class="form-label">첨부 파일</label>
+                <input type="file" class="form-control" id="file">
+            </div>
+
+            <!-- 이미지 첨부 -->
+            <div class="mb-3">
+                <label for="image" class="form-label">이미지 첨부</label>
+                <input type="file" class="form-control" id="image" accept="image/*">
+            </div>
+
+            <!-- 작성 버튼 -->
+            <button type="submit" class="btn btn-primary">작성하기</button>
+        </form>
+    </div>
+
+    <script>
+        // Firebase 초기화 코드
+        const firebaseConfig = {
+            apiKey: "AIzaSyBUO6mJQd3i8YLa-sCP0uFEG6ASgsq7CWM",
+            authDomain: "campushub-77412.firebaseapp.com",
+            projectId: "campushub-77412",
+            storageBucket: "campushub-77412.appspot.com",
+            messagingSenderId: "689464594659",
+            appId: "1:689464594659:web:61505a6164255a8d5f75d6"
+        };
+
+        // Firebase 앱 초기화
+        const app = firebase.initializeApp(firebaseConfig);
+        const auth = firebase.auth();
+        const db = firebase.firestore();
+        const storage = firebase.storage();
+
+        // 로그아웃 함수
+        function logout() {
+            auth.signOut().then(() => {
+                window.location.href = 'ch_main.html'; // 로그아웃 후 리다이렉트
+            }).catch(error => {
+                console.error('로그아웃 중 오류 발생:', error);
+            });
+        }
+
+        // 로그인한 사용자의 닉네임을 가져와서 네비게이션 바에 표시
+        auth.onAuthStateChanged((user) => {
+            if (user) {
+                // 로그인한 사용자 정보 가져오기
+                const userRef = db.collection('users').doc(user.uid);
+                userRef.get().then((doc) => {
+                    if (doc.exists) {
+                        const nickname = doc.data().nickname || '사용자'; // 닉네임이 없을 경우 '사용자'로 표시
+                        document.getElementById('user-nickname').textContent = nickname + '님';
+                    } else {
+                        console.log('사용자 정보를 찾을 수 없습니다.');
+                    }
+                }).catch((error) => {
+                    console.error('사용자 정보 가져오기 중 오류 발생:', error);
+                });
+            } else {
+                console.log('로그인 상태가 아닙니다.');
+            }
+        });
+
+        // 글 작성 폼 제출 이벤트 핸들러
+        document.getElementById('upload-form').addEventListener('submit', (e) => {
+            e.preventDefault();
+
+            const category = document.getElementById('category').value;
+            const title = document.getElementById('title').value;
+            const content = document.getElementById('content').value;
+            const file = document.getElementById('file').files[0];
+            const image = document.getElementById('image').files[0];
+
+            let fileUrl = '';
+            let imageUrl = '';
+
+            // 파일 업로드 처리 함수
+            function uploadFile(file, path) {
+                return new Promise((resolve, reject) => {
+                    const storageRef = storage.ref(path);
+                    const uploadTask = storageRef.put(file);
+
+                    uploadTask.on('state_changed',
+                        (snapshot) => {
+                            const progress = (snapshot.bytesTransferred / snapshot.totalBytes) * 100;
+                            console.log('Upload is ' + progress + '% done');
+                        },
+                        (error) => {
+                            reject(error);
+                        },
+                        () => {
+                            uploadTask.snapshot.ref.getDownloadURL().then((downloadURL) => {
+                                resolve(downloadURL);
+                            });
+                        }
+                    );
+                });
+            }
+
+            // 이미지 업로드 후에 게시글 업로드
+            function checkUploadCompletion() {
+                // 이미지가 있는 경우, 이미지 업로드 후 게시글 업로드
+                if (image) {
+                    uploadFile(image, `manager/${image.name}`).then(url => {
+                        imageUrl = url;
+                        uploadPost(category, title, content, fileUrl, imageUrl);
+                    }).catch(error => {
+                        console.error('이미지 업로드 중 오류 발생:', error);
+                    });
+                } else {
+                    // 이미지가 없는 경우 바로 게시글 업로드
+                    uploadPost(category, title, content, fileUrl, imageUrl);
+                }
+            }
+
+            // 파일 업로드 처리 후 업로드 완료 체크
+            if (file) {
+                uploadFile(file, `uploads/files/${file.name}`).then(url => {
+                    fileUrl = url;
+                    checkUploadCompletion();
+                }).catch(error => {
+                    console.error('파일 업로드 중 오류 발생:', error);
+                });
+            } else {
+                checkUploadCompletion();
+            }
+        });
+
+        function uploadPost(category, title, content, fileUrl, imageUrl) {
+            const user = auth.currentUser; // 로그인한 사용자 정보
+            if (!user) {
+                alert('로그인이 필요합니다.');
+                return;
+            }
+
+            // 사용자 정보 가져오기
+            const userRef = db.collection('users').doc(user.uid);
+            userRef.get().then((doc) => {
+                const nickname = doc.exists ? doc.data().nickname : '사용자'; // 닉네임 가져오기
+
+                // 이미지 URL이 있으면 게시물 내용에 <img> 태그 추가
+                const updatedContent = imageUrl ? `${content}<br><img src="${imageUrl}" alt="첨부 이미지">` : content;
+
+                // 선택한 카테고리에 따라 Firestore 컬렉션 결정
+                const postsCollection = db.collection(`학술 자료/학술 자료/${category}`);
+
+                postsCollection.add({
+                    userId: user.uid,
+                    title,
+                    content: updatedContent,
+                    fileUrl,
+                    category,
+                    timestamp: firebase.firestore.FieldValue.serverTimestamp(),
+                    제목: title,
+                    내용: updatedContent,
+                    올린시간: firebase.firestore.FieldValue.serverTimestamp(),
+                    작성자: { // 작성자 정보 (Map 형식)
+                        uid: user.uid,
+                        email: user.email || '', // email 추가
+                        이름: nickname // 추가된 닉네임
+                    }
+                }).then(() => {
+                    alert('업로드가 완료되었습니다.');
+                    window.location.href = 'study_main.html'; // 업로드 완료 후 study_main으로 리다이렉트
+                }).catch(error => {
+                    console.error('게시글 업로드 중 오류 발생:', error);
+                });
+            }).catch(error => {
+                console.error('사용자 정보 가져오기 중 오류 발생:', error);
+            });
+        }
+
+
+    </script>
+</body>
+</html>

@@ -1,0 +1,233 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>User Information</title>
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
+</head>
+<body>
+
+  <nav class="navbar navbar-expand-lg bg-body-tertiary">
+    <div class="container-fluid">
+      <button class="btn btn-link navbar-brand" onclick="location.href='ch_main.html'" style="text-decoration: none; color: inherit;">
+        CampusHub <span id="user-name-navbar" style="font-weight: normal;"></span>님
+      </button>
+
+      <div class="collapse navbar-collapse justify-content-center" id="navbarNav">
+        <ul class="navbar-nav">
+          <li class="nav-item">
+            <a class="nav-link active" aria-current="page" href="ch_main.html">Home</a>
+          </li>
+          <li class="nav-item">
+            <a class="nav-link" href="my_information.html">내 정보</a>
+          </li>
+          <!-- 알림 버튼 추가 -->
+          <li class="nav-item">
+            <a class="nav-link" href="all_alarm.html">알림</a>
+          </li>
+          <li class="nav-item">
+            <a class="nav-link" href="#" id="logout-button">로그아웃</a>
+          </li>
+        </ul>
+      </div>
+    </div>
+  </nav>
+
+  <div class="container mt-3">
+    <h2>사용자 정보</h2>
+    <p><strong>이름:</strong> <span id="user-name"></span></p>
+    <p><strong>닉네임:</strong> <span id="user-nickname"></span></p>
+    <p><strong>이메일:</strong> <span id="user-email"></span></p>
+    <p><strong>학교명:</strong> <span id="user-school"></span></p>
+    <p><strong>학과명:</strong> <span id="user-department"></span></p>
+
+    <h3>비밀번호 변경</h3>
+    <div class="mb-3">
+      <input type="password" class="form-control" placeholder="새 비밀번호" id="new-password">
+    </div>
+    <button type="submit" class="btn btn-primary" id="update-password">비밀번호 변경</button>
+
+    <h3 class="mt-4">자유게시판 게시물</h3>
+    <div id="user-posts-post" class="row">
+      <!-- 자유게시판 게시물들이 여기에 표시됩니다 -->
+    </div>
+
+    <h3 class="mt-4">상품 게시물</h3>
+    <div id="user-posts-product" class="row">
+      <!-- 상품 게시물들이 여기에 표시됩니다 -->
+    </div>
+
+    <h3 class="mt-4">학술 자료 게시물</h3>
+    <div id="user-posts-academic" class="row">
+      <!-- 학술 자료 게시물들이 여기에 표시됩니다 -->
+    </div>
+  </div>
+
+  <!-- Firebase SDKs (9.x 버전) -->
+  <script type="module">
+    import { initializeApp } from "https://www.gstatic.com/firebasejs/9.17.2/firebase-app.js";
+    import { getAuth, updatePassword, onAuthStateChanged, signOut } from "https://www.gstatic.com/firebasejs/9.17.2/firebase-auth.js";
+    import { getFirestore, doc, getDoc, collection, query, where, getDocs } from "https://www.gstatic.com/firebasejs/9.17.2/firebase-firestore.js";
+
+    document.addEventListener('DOMContentLoaded', () => {
+      const firebaseConfig = {
+        apiKey: "AIzaSyBUO6mJQd3i8YLa-sCP0uFEG6ASgsq7CWM",
+        authDomain: "campushub-77412.firebaseapp.com",
+        projectId: "campushub-77412",
+        storageBucket: "campushub-77412.appspot.com",
+        messagingSenderId: "689464594659",
+        appId: "1:689464594659:web:61505a6164255a8d5f75d6"
+      };
+
+      const app = initializeApp(firebaseConfig);
+      const auth = getAuth(app);
+      const db = getFirestore(app);
+
+      // 로그인한 사용자의 정보 불러오기
+      onAuthStateChanged(auth, async (user) => {
+        if (user) {
+          document.getElementById('user-name').textContent = user.displayName || '이름 없음';
+          document.getElementById('user-name-navbar').textContent = user.displayName || '사용자';
+          document.getElementById('user-email').textContent = user.email;
+
+          // Firestore에서 사용자 추가 정보 가져오기 (학교명, 학과명)
+          const userDocRef = doc(db, 'users', user.uid);
+          const userDoc = await getDoc(userDocRef);
+          if (userDoc.exists()) {
+            const userData = userDoc.data();
+            document.getElementById('user-school').textContent = userData.school || '학교 정보 없음';
+            document.getElementById('user-department').textContent = userData.department || '학과 정보 없음';
+            document.getElementById('user-nickname').textContent = userData.nickname || "닉네임 정보 없음";
+
+            // 사용자 게시물 불러오기
+            loadUserPosts(user.uid);
+          } else {
+            document.getElementById('user-school').textContent = '학교 정보 없음';
+            document.getElementById('user-department').textContent = '학과 정보 없음';
+            document.getElementById('user-nickname').textContent = "닉네임 정보 없음";
+          }
+        } else {
+          window.location.href = 'login.html';
+        }
+      });
+
+      // 사용자 게시물 불러오기 함수
+      async function loadUserPosts(userId) {
+        const collections = [
+          { name: 'post', sectionId: 'user-posts-post' },
+          { name: 'product', sectionId: 'user-posts-product' },
+          { name: '학술 자료/학술 자료/기출', sectionId: 'user-posts-academic', category: '기출' },
+          { name: '학술 자료/학술 자료/예제', sectionId: 'user-posts-academic', category: '예제' },
+          { name: '학술 자료/학술 자료/필기', sectionId: 'user-posts-academic', category: '필기' }
+        ];
+
+        let academicPostsExist = false; // 학술 자료에 게시물이 있는지 확인하는 변수
+        let postSectionFilled = { 'user-posts-post': false, 'user-posts-product': false }; // 자유게시판과 상품 게시물 존재 여부 확인
+
+        for (const collectionInfo of collections) {
+          const postsSection = document.getElementById(collectionInfo.sectionId);
+          const collectionName = collectionInfo.name;
+
+          let postQuery = query(collection(db, collectionName), where('작성자.uid', '==', userId));
+          const postSnapshot = await getDocs(postQuery);
+
+          let postItems = [];
+
+          if (!postSnapshot.empty) {
+            postSnapshot.forEach((doc) => {
+              const postData = doc.data();
+              postItems.push(`
+                <div class="col-md-4">
+                  <div class="card mb-4">
+                    <div class="card-body">
+                      <h5 class="card-title">${postData.제목 || '제목 없음'}</h5>
+                      <p class="card-text">${postData.내용 ? postData.내용.substring(0, 50) : '내용 없음'}...</p>
+                      <button class="btn btn-primary" onclick="viewPost('${doc.id}', '${collectionName}', '${collectionInfo.category || ''}')">게시물 보기</button>
+                    </div>
+                  </div>
+                </div>
+              `);
+            });
+
+            // 게시물 섹션에 게시물 추가 (덮어쓰지 않고 추가)
+            postsSection.innerHTML += postItems.join('');
+
+            // 학술 자료 게시물 존재 여부 확인
+            if (collectionInfo.sectionId === 'user-posts-academic') {
+              academicPostsExist = true;
+            } else {
+              postSectionFilled[collectionInfo.sectionId] = true; // 자유게시판이나 상품 게시물 섹션에 게시물이 있으면 true로 설정
+            }
+          }
+        }
+
+        // 자유게시판 게시물이 없을 경우 '게시물이 없습니다.' 메시지 표시
+        const postSection = document.getElementById('user-posts-post');
+        if (!postSectionFilled['user-posts-post']) {
+          postSection.innerHTML = '<p>게시물이 없습니다.</p>';
+        }
+
+        // 상품 게시물이 없을 경우 '게시물이 없습니다.' 메시지 표시
+        const productSection = document.getElementById('user-posts-product');
+        if (!postSectionFilled['user-posts-product']) {
+          productSection.innerHTML = '<p>게시물이 없습니다.</p>';
+        }
+
+        // 학술 자료(기출, 예제, 필기) 모두 게시물이 없을 때 '게시물이 없습니다.' 메시지 표시
+        const academicSection = document.getElementById('user-posts-academic');
+        if (!academicPostsExist && academicSection.innerHTML === '') {
+          academicSection.innerHTML = '<p>게시물이 없습니다.</p>';
+        }
+      }
+
+      // 게시물 보기 페이지로 이동
+      window.viewPost = function(postId, collectionName, category = '') {
+      if (collectionName.startsWith('학술 자료/학술 자료')) {
+        // 학술 자료 컬렉션의 경우 카테고리를 포함한 URL로 이동
+        window.location.href = `study_post.html?id=${postId}&category=${encodeURIComponent(category)}`;
+      } else if (collectionName === 'post') {
+        // 자유게시판 게시물은 board_post.html로 이동
+        window.location.href = `board_post.html?id=${postId}`;
+      } else if (collectionName === 'product') {
+        // 상품 게시물은 market_post.html로 이동
+        window.location.href = `market_post.html?id=${postId}`;
+      } else {
+        // 기타 경우
+        window.location.href = `${collectionName}_post.html?id=${postId}`;
+      }
+      };
+
+
+      // 로그아웃 버튼 클릭 이벤트 처리
+      document.getElementById('logout-button').addEventListener('click', async () => {
+        try {
+          await signOut(auth);
+          window.location.href = 'login.html'; // 로그아웃 후 로그인 페이지로 이동
+        } catch (error) {
+          console.error('로그아웃 중 오류가 발생했습니다: ', error);
+          alert('로그아웃 중 오류가 발생했습니다.');
+        }
+      });
+
+      // 비밀번호 변경 처리
+      document.getElementById('update-password').addEventListener('click', async () => {
+        const newPassword = document.getElementById('new-password').value;
+        if (auth.currentUser) {
+          try {
+            await updatePassword(auth.currentUser, newPassword);
+            alert('비밀번호가 성공적으로 변경되었습니다.');
+          } catch (error) {
+            console.error('비밀번호 변경 중 오류가 발생했습니다: ', error);
+            alert('비밀번호 변경 중 오류가 발생했습니다.');
+          }
+        } else {
+          alert('로그인된 사용자가 없습니다.');
+        }
+      });
+    });
+  </script>
+
+  <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+</body>
+</html>

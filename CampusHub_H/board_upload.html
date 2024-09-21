@@ -1,0 +1,183 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta http-equiv="X-UA-Compatible" content="IE=edge">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>게시물 업로드</title>
+  <link href="./bootstrap.min.css" rel="stylesheet">
+
+</head>
+<body>
+
+  <nav class="navbar navbar-expand-lg bg-body-tertiary">
+    <div class="container-fluid">
+      <button class="btn btn-link navbar-brand" onclick="location.href='ch_main.html'" style="text-decoration: none; color: inherit;">
+        CampusHub <span id="user-nickname" style="font-weight: normal;"></span>님
+      </button>
+      <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbarNav" aria-controls="navbarNav" aria-expanded="false" aria-label="Toggle navigation">
+        <span class="navbar-toggler-icon"></span>
+      </button>
+      <div class="collapse navbar-collapse justify-content-center" id="navbarNav">
+        <ul class="navbar-nav">
+          <li class="nav-item">
+            <a class="nav-link active" aria-current="page" href="ch_main.html">Home</a>
+          </li>
+          <li class="nav-item">
+            <a class="nav-link" href="board_upload.html">업로드</a>
+          </li>
+          <li class="nav-item">
+            <a class="nav-link" href="my_information.html">내 정보</a>
+          </li>
+          <li class="nav-item">
+            <a class="nav-link" href="#" id="logout-button">로그아웃</a>
+          </li>
+        </ul>
+      </div>
+      <div class="d-flex ms-auto">
+        <form class="d-flex" role="search">
+          <input class="form-control me-2" type="search" placeholder="Search" aria-label="Search" id="search-query">
+          <button class="btn btn-outline-success" type="button" id="search-button">
+            <img src="./search_icon.webp" alt="Search" style="width: 20px; height: 20px;">
+          </button>
+        </form>
+      </div>
+    </div>
+  </nav>
+
+  <div class="container mt-3">
+    <div class="mb-3">
+      <label for="title" class="form-label">Title</label>
+      <input type="text" class="form-control" id="title" placeholder="title">
+    </div>
+    <div class="mb-3">
+      <label for="content" class="form-label">Content</label>
+      <textarea class="form-control" id="content" placeholder="content"></textarea>
+    </div>
+    <div class="mb-3">
+      <label for="image" class="form-label">Image</label>
+      <input class="form-control" type="file" id="image">
+    </div>
+    <button class="btn btn-danger mt-3" id="send">올리기</button>
+  </div>
+
+  <!-- Firebase SDKs (9.x 버전) -->
+  <script type="module">
+    import { initializeApp } from "https://www.gstatic.com/firebasejs/9.17.2/firebase-app.js";
+    import { getFirestore, collection, addDoc, serverTimestamp, doc, getDoc } from "https://www.gstatic.com/firebasejs/9.17.2/firebase-firestore.js";
+    import { getStorage, ref, uploadBytes, getDownloadURL } from "https://www.gstatic.com/firebasejs/9.17.2/firebase-storage.js";
+    import { getAuth, onAuthStateChanged, signOut } from "https://www.gstatic.com/firebasejs/9.17.2/firebase-auth.js";
+
+    document.addEventListener('DOMContentLoaded', () => {
+      const firebaseConfig = {
+        apiKey: "AIzaSyBUO6mJQd3i8YLa-sCP0uFEG6ASgsq7CWM",
+        authDomain: "campushub-77412.firebaseapp.com",
+        projectId: "campushub-77412",
+        storageBucket: "campushub-77412.appspot.com",
+        messagingSenderId: "689464594659",
+        appId: "1:689464594659:web:61505a6164255a8d5f75d6"
+      };
+
+      const app = initializeApp(firebaseConfig);
+      const db = getFirestore(app);
+      const storage = getStorage(app);
+      const auth = getAuth(app);
+
+      let userNickname = ''; // 사용자 닉네임을 저장하는 변수
+
+      // 로그인한 사용자의 정보 불러오기
+      onAuthStateChanged(auth, async (user) => {
+        if (user) {
+          const userDocRef = doc(db, 'users', user.uid);
+          const userDocSnap = await getDoc(userDocRef);
+
+          if (userDocSnap.exists()) {
+            const userData = userDocSnap.data();
+            userNickname = userData.nickname;  // register.html에서 저장된 닉네임 필드
+            document.getElementById('user-nickname').textContent = userNickname || '사용자';
+          }
+        } else {
+          window.location.href = 'login.html';
+        }
+      });
+
+      // 로그아웃 버튼 클릭 이벤트 처리
+      document.getElementById('logout-button').addEventListener('click', async () => {
+        try {
+          await signOut(auth);
+          window.location.href = 'login.html'; 
+        } catch (error) {
+          console.error('로그아웃 중 오류가 발생했습니다: ', error);
+          alert('로그아웃 중 오류가 발생했습니다.');
+        }
+      });
+
+      // 검색 기능
+      document.getElementById('search-button').addEventListener('click', () => {
+        const query = document.getElementById('search-query').value;
+        if (query) {
+          window.location.href = `board_search_result.html?query=${query}`;
+        }
+      });
+
+      // 제목을 토크나이즈하는 함수
+      function tokenizeTitle(title) {
+        const tokens = [];
+        const cleanedTitle = title.replace(/\s+/g, '');  // 공백 제거한 제목
+
+        for (let i = 0; i < cleanedTitle.length; i++) {
+          for (let j = i + 1; j <= cleanedTitle.length; j++) {
+            tokens.push(cleanedTitle.slice(i, j).toLowerCase());  // 띄어쓰기 제거 후 토큰화
+          }
+        }
+
+        return tokens;
+      }
+
+      document.getElementById('send').addEventListener('click', async () => {
+        const title = document.getElementById('title').value;
+        const content = document.getElementById('content').value;
+        const file = document.querySelector('#image').files[0];
+        const titleTokens = tokenizeTitle(title);  // 제목을 토크나이즈
+
+        if (!auth.currentUser) {
+          alert('로그인이 필요합니다.');
+          return;
+        }
+
+        let downloadURL = ''; // 기본값 설정
+
+        try {
+          if (file) {  // 파일이 있는 경우에만 업로드 처리
+            const storageRef = ref(storage, 'images/' + file.name);
+            const uploadResult = await uploadBytes(storageRef, file);
+            downloadURL = await getDownloadURL(uploadResult.ref);
+          }
+
+          // Firestore에 작성자의 정보와 함께 게시물 정보 저장
+          await addDoc(collection(db, 'post'), {
+            제목: title,
+            제목_tokens: titleTokens,  // 토크나이즈된 제목 추가
+            내용: content,
+            이미지: downloadURL,  // 파일이 없으면 빈 문자열이 저장됨
+            작성자: {
+              닉네임: userNickname, // 닉네임을 작성자로 저장
+              이메일: auth.currentUser.email,
+              uid: auth.currentUser.uid
+            },
+            올린시간: serverTimestamp()
+          });
+
+          alert('게시물이 성공적으로 업로드되었습니다.');
+          window.location.href = 'board_main.html';
+        } catch (error) {
+          console.error('Error adding document: ', error);
+          alert('게시물 업로드 중 오류가 발생했습니다.');
+        }
+      });
+    });
+  </script>
+
+  <script src="./bootstrap.bundle.min.js"></script>
+</body>
+</html>

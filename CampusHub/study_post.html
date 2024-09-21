@@ -1,0 +1,369 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>게시글 보기 - CampusHub</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.0.1/dist/css/bootstrap.min.css" rel="stylesheet">
+    <style>
+        .navbar-brand {
+            flex-grow: 1;
+        }
+        .navbar-text {
+            margin-left: auto;
+        }
+        .post-content img {
+            max-width: 100%;
+            height: auto;
+        }
+        .comment {
+            border: 1px solid #ddd;
+            padding: 10px;
+            margin-top: 10px;
+        }
+        .reply {
+            border: 1px solid #eee;
+            padding: 5px;
+            margin-top: 5px;
+            margin-left: 20px;
+        }
+        .comment-form {
+            margin-top: 20px;
+        }
+        .reply-form {
+            margin-top: 10px;
+        }
+    </style>
+</head>
+<body>
+    <!-- 네비게이션 바 -->
+    <nav class="navbar navbar-expand-lg navbar-light bg-light">
+        <div class="container-fluid">
+            <a class="navbar-brand" href="ch_main.html">CampusHub <span id="user-nickname"></span></a>
+            <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbarNav" aria-controls="navbarNav" aria-expanded="false" aria-label="Toggle navigation">
+                <span class="navbar-toggler-icon"></span>
+            </button>
+            <div class="collapse navbar-collapse" id="navbarNav">
+                <ul class="navbar-nav ms-auto">
+                    <li class="nav-item">
+                        <a class="nav-link" href="my_information.html">내정보</a>
+                    </li>
+                    <li class="nav-item">
+                        <a class="nav-link" href="all_alarm.html">알림</a>
+                    </li>
+                    <li class="nav-item">
+                        <a class="nav-link" href="#" onclick="logout()">로그아웃</a>
+                    </li>
+                </ul>
+            </div>
+        </div>
+    </nav>
+
+    <div class="container mt-4">
+        <h2>게시글 보기</h2>
+        <div id="post-container" class="mb-4">
+            <!-- 게시글 내용이 여기에 표시됩니다 -->
+        </div>
+        <a href="study_main.html" class="btn btn-secondary">돌아가기</a>
+
+        <!-- 댓글 목록 -->
+        <div id="comments-container" class="mt-4">
+            <h4>댓글</h4>
+            <!-- 댓글 목록이 여기에 표시됩니다 -->
+        </div>
+
+        <!-- 댓글 작성 폼 -->
+        <div class="comment-form">
+            <h5>댓글 작성하기</h5>
+            <textarea id="comment-text" class="form-control" rows="3" placeholder="댓글을 입력하세요"></textarea>
+            <button class="btn btn-primary mt-2" onclick="submitComment()">댓글 작성하기</button>
+        </div>
+    </div>
+
+    <!-- Firebase 초기화 코드 -->
+    <script src="https://www.gstatic.com/firebasejs/9.0.0/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.0.0/firebase-auth-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.0.0/firebase-firestore-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.0.0/firebase-storage-compat.js"></script>
+    <script>
+        // Firebase 초기화
+        const firebaseConfig = {
+            apiKey: "AIzaSyBUO6mJQd3i8YLa-sCP0uFEG6ASgsq7CWM",
+            authDomain: "campushub-77412.firebaseapp.com",
+            projectId: "campushub-77412",
+            storageBucket: "campushub-77412.appspot.com",
+            messagingSenderId: "689464594659",
+            appId: "1:689464594659:web:61505a6164255a8d5f75d6"
+        };
+    
+        firebase.initializeApp(firebaseConfig);
+        const db = firebase.firestore();
+        const auth = firebase.auth();
+    
+        // 로그인 상태 확인 후 닉네임 설정
+        auth.onAuthStateChanged(async (user) => {
+            if (user) {
+                const nickname = await getUserNickname(user.uid);
+                document.getElementById('user-nickname').textContent = `${nickname}님`;
+            }
+        });
+
+        // 사용자 닉네임을 Firestore에서 가져오는 함수
+        async function getUserNickname(userId) {
+            try {
+                const userDoc = await db.collection('users').doc(userId).get();
+                if (userDoc.exists) {
+                    return userDoc.data().nickname || '알 수 없음'; // 닉네임이 없으면 '알 수 없음' 표시
+                } else {
+                    return '알 수 없음'; // 사용자 문서가 없는 경우
+                }
+            } catch (error) {
+                console.error('사용자 닉네임을 가져오는 중 오류 발생:', error);
+                return '알 수 없음';
+            }
+        }
+
+        // 게시글 ID와 카테고리 가져오기
+        const urlParams = new URLSearchParams(window.location.search);
+        const postId = urlParams.get('id');
+        const category = urlParams.get('category');
+
+        let postAuthorId = '';
+        let currentUserId = '';
+
+        if (postId && category) {
+            // Firestore에서 게시글 데이터 가져오기
+            const postRef = db.collection(`학술 자료/학술 자료/${category}`).doc(postId);
+
+            postRef.get().then(async doc => {
+                if (doc.exists) {
+                    const post = doc.data();
+                    postAuthorId = post.userId;
+                    currentUserId = auth.currentUser ? (await getUserNickname(auth.currentUser.uid)) : '';
+                    displayPost(post);
+                } else {
+                    document.getElementById('post-container').innerHTML = '<p>게시글을 찾을 수 없습니다.</p>';
+                }
+            }).catch(error => {
+                console.error('게시글 로드 중 오류 발생:', error);
+            });
+
+            // Firestore에서 댓글 데이터 가져오기
+            const commentsRef = postRef.collection('comments');
+            commentsRef.orderBy('timestamp').onSnapshot(async snapshot => {
+                displayComments(snapshot);
+            });
+        } else {
+            document.getElementById('post-container').innerHTML = '<p>게시글 ID 또는 카테고리가 없습니다.</p>';
+        }
+
+        // 게시글 내용 표시 함수
+        async function displayPost(post) {
+            const postContainer = document.getElementById('post-container');
+            const timestamp = post.timestamp ? new Date(post.timestamp.seconds * 1000).toLocaleString() : '알 수 없음';
+            const authorNickname = await getUserNickname(post.userId);
+
+            postContainer.innerHTML = `
+                <h3>${post.title}</h3>
+                <p>작성자: ${authorNickname} <button class="btn btn-info btn-sm" onclick="viewAuthorInfo('${post.userId}')">게시자 정보보기</button> 작성일: ${timestamp}</p>
+                <div class="post-content">${post.content}</div>
+                ${currentUserId === authorNickname ? `
+                    <button class="btn btn-warning btn-sm" onclick="editPost('${postId}')">수정</button>
+                    <button class="btn btn-danger btn-sm" onclick="confirmDeletePost('${postId}')">삭제</button>
+                ` : ''}
+            `;
+        }
+
+        // 게시물 수정 함수
+        function editPost(postId) {
+            const newTitle = prompt("새로운 제목을 입력하세요:");
+            const newContent = prompt("새로운 내용을 입력하세요:");
+            if (newTitle && newContent) {
+                const postRef = db.collection(`학술 자료/학술 자료/${category}`).doc(postId);
+                postRef.update({
+                    title: newTitle,
+                    content: newContent,
+                    timestamp: firebase.firestore.FieldValue.serverTimestamp()
+                }).then(() => {
+                    alert('게시물이 수정되었습니다.');
+                    location.reload(); // 페이지 새로고침
+                }).catch(error => {
+                    console.error('게시물 수정 중 오류 발생:', error);
+                });
+            } else {
+                alert('제목과 내용을 모두 입력해야 합니다.');
+            }
+        }
+
+        // 게시물 삭제 확인 함수
+        function confirmDeletePost(postId) {
+            if (confirm('이 게시물을 삭제하시겠습니까?')) {
+                deletePost(postId);
+            }
+        }
+
+        // 게시물 삭제 함수
+        function deletePost(postId) {
+            db.collection(`학술 자료/학술 자료/${category}`).doc(postId).delete()
+                .then(() => {
+                    alert('게시물이 삭제되었습니다.');
+                    window.location.href = 'study_main.html'; // 삭제 후 메인 페이지로 리다이렉트
+                }).catch(error => {
+                    console.error('게시물 삭제 중 오류 발생:', error);
+                });
+        }
+
+
+        // 게시자 정보보기 함수
+        function viewAuthorInfo(userId) {
+            window.location.href = `author_information.html?author=${userId}`;
+        }
+
+        // 댓글 및 답글을 표시하는 함수
+        function displayComments(commentsSnapshot) {
+            const commentsContainer = document.getElementById('comments-container');
+            commentsContainer.innerHTML = '<h4>댓글</h4>';
+            commentsSnapshot.forEach(async doc => {
+                const comment = doc.data();
+                const commentId = doc.id;
+                const timestamp = comment.timestamp ? new Date(comment.timestamp.seconds * 1000).toLocaleString() : '알 수 없음';
+
+                commentsContainer.innerHTML += `
+                    <div class="comment" id="comment-${commentId}">
+                        <p><strong>${comment.nickname}</strong> - ${timestamp}</p>
+                        <p>${comment.text}</p>
+                        ${currentUserId === comment.nickname ? `
+                            <button class="btn btn-warning btn-sm" onclick="editComment('${commentId}')">수정</button>
+                            <button class="btn btn-danger btn-sm" onclick="confirmDeleteComment('${commentId}')">삭제</button>
+                        ` : ''}
+                        <div class="reply-container" id="reply-container-${commentId}">
+                            <!-- 답글이 여기에 표시됩니다 -->
+                        </div>
+                        <div class="reply-form">
+                            <h6>답글 작성하기</h6>
+                            <textarea id="reply-text-${commentId}" class="form-control" rows="2" placeholder="답글을 입력하세요"></textarea>
+                            <button class="btn btn-primary mt-2" onclick="submitReply('${commentId}')">답글 작성하기</button>
+                        </div>
+                    </div>
+                `;
+
+                // 각 댓글의 답글 불러오기
+                const repliesRef = db.collection(`학술 자료/학술 자료/${category}`).doc(postId).collection('comments').doc(commentId).collection('replies');
+                repliesRef.orderBy('timestamp').onSnapshot(replySnapshot => {
+                    const replyContainer = document.getElementById(`reply-container-${commentId}`);
+                    replyContainer.innerHTML = '';
+                    replySnapshot.forEach(replyDoc => {
+                        const reply = replyDoc.data();
+                        const replyTimestamp = reply.timestamp ? new Date(reply.timestamp.seconds * 1000).toLocaleString() : '알 수 없음';
+
+                        replyContainer.innerHTML += `
+                            <div class="reply">
+                                <p><strong>${reply.nickname}</strong> - ${replyTimestamp}</p>
+                                <p>${reply.text}</p>
+                            </div>
+                        `;
+                    });
+                });
+            });
+        }
+
+        // 댓글 작성 함수
+        async function submitComment() {
+            const commentText = document.getElementById('comment-text').value.trim();
+            if (commentText) {
+                const user = auth.currentUser;
+                if (user) {
+                    const nickname = await getUserNickname(user.uid); // 사용자 닉네임 가져오기
+                    const comment = {
+                        text: commentText,
+                        nickname: nickname, // 닉네임 저장
+                        timestamp: firebase.firestore.FieldValue.serverTimestamp()
+                    };
+                    const postRef = db.collection(`학술 자료/학술 자료/${category}`).doc(postId);
+                    try {
+                        await postRef.collection('comments').add(comment);
+                        // 알림 생성 (작성자가 게시글 작성자가 아닌 경우에만)
+                        if (user.uid !== postAuthorId) {
+                            await createNotification(postAuthorId, 'comment', `${nickname}님이 댓글을 남겼습니다.`, postId, category);
+                        }
+                        document.getElementById('comment-text').value = '';
+                    } catch (error) {
+                        console.error('댓글 작성 중 오류 발생:', error);
+                    }
+                } else {
+                    alert('로그인 후 댓글을 작성할 수 있습니다.');
+                }
+            } else {
+                alert('댓글 내용을 입력해 주세요.');
+            }
+        }
+
+        // 답글 작성 함수
+        async function submitReply(commentId) {
+            const replyText = document.getElementById(`reply-text-${commentId}`).value.trim();
+            if (replyText) {
+                const user = auth.currentUser;
+                if (user) {
+                    const nickname = await getUserNickname(user.uid); // 사용자 닉네임 가져오기
+                    const reply = {
+                        text: replyText,
+                        nickname: nickname, // 닉네임 저장
+                        timestamp: firebase.firestore.FieldValue.serverTimestamp()
+                    };
+                    const commentRef = db.collection(`학술 자료/학술 자료/${category}`).doc(postId).collection('comments').doc(commentId);
+                    commentRef.collection('replies').add(reply).then(() => {
+                        // 알림 생성 (작성자가 게시글 작성자가 아닌 경우에만)
+                        if (user.uid !== postAuthorId) {
+                            createNotification(postAuthorId, 'reply', `${nickname}님이 댓글에 답글을 남겼습니다.`, postId, category);
+                        }
+                        document.getElementById(`reply-text-${commentId}`).value = '';
+                    }).catch(error => {
+                        console.error('답글 작성 중 오류 발생:', error);
+                    });
+                } else {
+                    alert('로그인 후 답글을 작성할 수 있습니다.');
+                }
+            } else {
+                alert('답글 내용을 입력해 주세요.');
+            }
+        }
+
+        // 댓글 수정 함수
+        function editComment(commentId) {
+            // 댓글 수정 기능 구현
+        }
+
+        // 댓글 삭제 확인 함수
+        function confirmDeleteComment(commentId) {
+            if (confirm('이 댓글을 삭제하시겠습니까?')) {
+                deleteComment(commentId);
+            }
+        }
+
+        // 댓글 삭제 함수
+        function deleteComment(commentId) {
+            db.collection(`학술 자료/학술 자료/${category}`).doc(postId).collection('comments').doc(commentId).delete()
+                .then(() => {
+                    console.log('댓글이 삭제되었습니다.');
+                }).catch(error => {
+                    console.error('댓글 삭제 중 오류 발생:', error);
+                });
+        }
+
+        // 로그아웃 함수
+        function logout() {
+            auth.signOut().then(() => {
+                window.location.href = 'ch_main.html';
+            }).catch(error => {
+                console.error('로그아웃 중 오류 발생:', error);
+            });
+        }
+
+        // 알림 생성 함수 (가정)
+        async function createNotification(userId, type, message, postId, category) {
+            // 알림 생성 구현
+        }
+    </script>
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.0.1/dist/js/bootstrap.bundle.min.js"></script>
+</body>
+</html>

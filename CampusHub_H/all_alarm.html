@@ -1,0 +1,181 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>All Notifications</title>
+  <link href="./bootstrap.min.css" rel="stylesheet">
+</head>
+<body>
+  <nav class="navbar navbar-expand-lg bg-body-tertiary">
+    <div class="container-fluid">
+      <button class="btn btn-link navbar-brand" onclick="location.href='ch_main.html'" style="text-decoration: none; color: inherit;">
+        CampusHub <span id="user-name" style="font-weight: normal;"></span>님
+      </button>
+
+      <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbarNav" aria-controls="navbarNav" aria-expanded="false" aria-label="Toggle navigation">
+        <span class="navbar-toggler-icon"></span>
+      </button>
+      <div class="collapse navbar-collapse justify-content-center" id="navbarNav">
+        <ul class="navbar-nav">
+          <li class="nav-item">
+            <a class="nav-link active" aria-current="page" href="ch_main.html">Home</a>
+          </li>
+          <li class="nav-item">
+            <a class="nav-link" href="my_information.html">내 정보</a>
+          </li>
+          <li class="nav-item">
+            <a class="nav-link" href="#" id="logout-button">로그아웃</a>
+          </li>
+        </ul>
+      </div>
+    </div>
+  </nav>
+
+  <div class="container mt-5">
+    <h2>모든 알림</h2>
+    <div id="notifications-list">
+      <!-- 알림 목록이 여기에 표시됩니다 -->
+    </div>
+  </div>
+
+  <!-- Firebase SDKs (9.x 버전) -->
+  <script type="module">
+    import { initializeApp } from "https://www.gstatic.com/firebasejs/9.17.2/firebase-app.js";
+    import { getAuth, onAuthStateChanged, signOut } from "https://www.gstatic.com/firebasejs/9.17.2/firebase-auth.js";
+    import { getFirestore, collection, getDocs, query, where, orderBy, doc, getDoc } from "https://www.gstatic.com/firebasejs/9.17.2/firebase-firestore.js";
+
+    document.addEventListener('DOMContentLoaded', async () => {
+      const firebaseConfig = {
+        apiKey: "AIzaSyBUO6mJQd3i8YLa-sCP0uFEG6ASgsq7CWM",
+        authDomain: "campushub-77412.firebaseapp.com",
+        projectId: "campushub-77412",
+        storageBucket: "campushub-77412.appspot.com",
+        messagingSenderId: "689464594659",
+        appId: "1:689464594659:web:61505a6164255a8d5f75d6"
+      };
+
+      const app = initializeApp(firebaseConfig);
+      const auth = getAuth(app);
+      const db = getFirestore(app);
+
+      // 로그아웃 버튼 클릭 이벤트 처리
+      document.getElementById('logout-button').addEventListener('click', async () => {
+        try {
+          await signOut(auth);
+          window.location.href = 'login.html'; // 로그아웃 후 로그인 페이지로 이동
+        } catch (error) {
+          console.error('로그아웃 중 오류가 발생했습니다: ', error);
+          alert('로그아웃 중 오류가 발생했습니다.');
+        }
+      });
+
+      // 로그인한 사용자의 이름을 가져와서 표시 및 알림 불러오기
+      onAuthStateChanged(auth, async (user) => {
+        if (user) {
+          document.getElementById('user-name').textContent = user.displayName || '사용자';
+
+          // Firestore에서 알림을 가져와서 표시 (쪽지 및 댓글 모두)
+          const loadNotifications = async () => {
+            const notificationsQuery = query(
+              collection(db, 'letter'),
+              where('수신자ID', '==', user.uid),
+              orderBy('보낸시간', 'desc')
+            );
+            const querySnapshot = await getDocs(notificationsQuery);
+            const notificationsList = document.getElementById('notifications-list');
+            notificationsList.innerHTML = ''; // 기존 알림 초기화
+
+            if (querySnapshot.empty) {
+              notificationsList.insertAdjacentHTML('beforeend', '<p>새 알림이 없습니다.</p>');
+            } else {
+              for (const doc of querySnapshot.docs) {
+                const data = doc.data();
+                
+                // 송신자의 닉네임 불러오기
+                const senderNickname = await getSenderNickname(data.송신자ID);
+
+                // 알림 내용 구분 (댓글인지 쪽지인지)
+                const isComment = data.내용.includes('댓글을 남겼습니다');
+                const notificationType = isComment ? '댓글을 남겼습니다.' : '쪽지를 보냈습니다.';
+                
+                // 알림 항목 생성
+                const notificationItem = `
+                  <div class="card mb-2">
+                    <div class="card-body">
+                      <p><strong>${senderNickname}</strong>님이 ${notificationType}</p>
+                      <p><small>${new Date(data.보낸시간.seconds * 1000).toLocaleString('ko-KR')}</small></p>
+                      <button class="btn btn-primary view-detail" data-id="${doc.id}" data-iscomment="${isComment}">자세히 보기</button>
+                    </div>
+                  </div>`;
+                notificationsList.insertAdjacentHTML('beforeend', notificationItem);
+              }
+
+              // 자세히 보기 버튼 클릭 이벤트
+              document.querySelectorAll('.view-detail').forEach(button => {
+                button.addEventListener('click', async (event) => {
+                  const messageId = event.target.getAttribute('data-id');
+                  const isComment = event.target.getAttribute('data-iscomment') === 'true';
+
+                  const messageDoc = await getDoc(doc(db, 'letter', messageId));
+                  if (messageDoc.exists()) {
+                    const messageData = messageDoc.data();
+
+                    const senderRef = doc(db, 'users', messageData.송신자ID);
+                    const senderSnapshot = await getDoc(senderRef);
+                    const senderName = senderSnapshot.exists() ? senderSnapshot.data().nickname : '알 수 없는 사용자';
+
+                    // 팝업 창에서 쪽지 또는 게시글 보기 처리
+                    const popup = window.open('', '알림 내용', 'width=400,height=300');
+                    let popupContent = `
+                      <html>
+                        <head><title>알림 내용</title></head>
+                        <body>
+                          <h3>알림 내용</h3>
+                          <p><strong>보낸 사람:</strong> ${senderName}</p>
+                          <p><strong>내용:</strong> ${messageData.내용}</p>
+                          <p><strong>보낸 시간:</strong> ${new Date(messageData.보낸시간.seconds * 1000).toLocaleString()}</p>
+                    `;
+
+                    if (isComment) {
+                      popupContent += `<p><a href="${messageData.게시글URL}" target="_blank" class="btn btn-primary">게시글 보기</a></p>`;
+                    }
+
+                    popupContent += `
+                          <button onclick="window.close()">닫기</button>
+                        </body>
+                      </html>
+                    `;
+
+                    popup.document.write(popupContent);
+                  }
+                });
+              });
+            }
+          };
+
+          // 송신자의 닉네임을 Firestore에서 가져오는 함수
+          const getSenderNickname = async (senderId) => {
+            const userRef = doc(db, 'users', senderId);
+            const userSnap = await getDoc(userRef);
+            if (userSnap.exists()) {
+              return userSnap.data().nickname || '알 수 없는 사용자';
+            } else {
+              return '알 수 없는 사용자';
+            }
+          };
+
+          loadNotifications(); // 알림을 로드하는 함수 호출
+
+        } else {
+          // 사용자가 로그인하지 않은 경우 로그인 페이지로 이동
+          window.location.href = 'login.html';
+        }
+      });
+    });
+  </script>
+
+  <script src="./bootstrap.bundle.min.js"></script>
+
+</body>
+</html>
